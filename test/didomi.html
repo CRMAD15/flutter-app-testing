@@ -1,0 +1,76 @@
+<script type="text/javascript">
+    (function () {
+        var host = (location.hostname || "").toLowerCase();
+        var seg = (location.pathname || "/").split("/").filter(Boolean);
+
+        var ls = function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
+
+        var norm = function (v) {
+            if (!v) return null;
+            v = String(v).trim().replace("_", "-");
+            if (/^zh-(cn|tw)$/i.test(v)) return v.toLowerCase() === "zh-cn" ? "zh-CN" : "zh-TW";
+            if (/^[a-z]{2}$/i.test(v)) return v.toLowerCase();
+            return null;
+        };
+
+        var fromPath = function () {
+            return norm(seg[0]) || (seg[0] === "iberia" ? norm(seg[1]) : null);
+        };
+
+        var fromHbcLS = function () {
+            try {
+                var raw = ls("hbcAppLanguage");
+                if (!raw) return null;
+                var obj = JSON.parse(raw);
+                return norm(obj && obj.state && obj.state.language);
+            } catch (e) {
+                return null;
+            }
+        };
+
+        var lang =
+            host === "partners.holafly.com"
+                ? fromPath()
+                : host === "brands.holafly.com"
+                    ? (seg[0] === "iberia" ? (fromPath() || norm(ls("__tolgee_currentLanguage"))) : norm(ls("holaflylang")))
+                    : host === "hbc.holafly.com"
+                        ? fromHbcLS()
+                        : null;
+
+        // Global fallback chain + default "en"
+        lang = lang || fromPath() || norm(ls("__tolgee_currentLanguage")) || norm(ls("holaflylang")) || fromHbcLS() || "en";
+
+        window.didomiConfig = {
+            languages: { enabled: [lang], default: lang },
+            cookies: { storageSources: { cookies: true, localStorage: false } },
+
+        };
+        window.didomiEventListeners = window.didomiEventListeners || [];
+        window.didomiEventListeners.push({
+            event: 'notice.shown',
+            listener: function () {
+                var scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+                document.body.style.overflow = 'hidden';
+                document.body.style.paddingRight = scrollbarWidth + 'px';
+            }
+        });
+
+        window.didomiEventListeners.push({
+            event: 'notice.hidden',
+            listener: function () {
+                document.body.style.overflow = '';
+                document.body.style.paddingRight = '';
+            }
+        });
+    })();
+
+</script>
+
+<!-- Anti-flickering script -->
+<!-- <script>
+    var  timeout = 3000; // Timeout value to remove the flicker (in milliseconds)
+    !function(h,i,d,e){var  t,n=h.createElement("style");n.id=e,n.innerHTML="body{opacity:0}",h.head.appendChild(n),t=d,i.rmfk=function(){var  t=h.getElementById(e);t&&t.parentNode.removeChild(t)},setTimeout(i.rmfk,t)}(document,window,timeout,"abhide");
+</script> -->
+
+<!-- Mida A/B Testing Script (Place in <HEAD> for speed & no flicker) -->
+<script type="text/javascript" async src="https://cdn.mida.so/js/optimize.js?key=M304O8x7Y4m76RKDlbLQVo"></script>
