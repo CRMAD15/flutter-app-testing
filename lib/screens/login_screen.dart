@@ -1,119 +1,303 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:klaviyo_flutter_sdk/klaviyo_flutter_sdk.dart';
+import 'analytics_service.dart';
+import 'product_model.dart';
+import 'theme.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final String? nextRoute;
+  final Product? product; // passed when coming from PDP
+
+  const LoginScreen({super.key, this.nextRoute, this.product});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _isLogin = true;
-  String _errorMessage = '';
+  final _confirmPasswordController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+  String? _errorMessage;
 
-  Future<void> _submit() async {
-    setState(() => _errorMessage = '');
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
     try {
-      UserCredential credential;
-      if (_isLogin) {
-        credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
-      } else {
-        credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
-      }
-
-      // Identificar perfil en Klaviyo tras login/registro
-      final profile = KlaviyoProfile(
-        // externalId: '987654-7e89-4b2a-9c01-3d5f8e7b2a1c',
-        email: 'cristian.test12345@gmail.com',
-        phoneNumber: '+34684543321',
-        properties: {
-          'travel_start_date': '2026-06-15',
-          'travel_end_date': '2026-06-30',
-        },
+      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
       );
-      await KlaviyoSDK().setProfile(profile);
-
-      debugPrint('Klaviyo identify: ${credential.user?.email}');
-
-      if (mounted) Navigator.pop(context);
+      await AnalyticsService.logLogin();
+      if (cred.user != null) {
+        await AnalyticsService.setUserId(cred.user!.uid);
+      }
+      if (!mounted) return;
+      _navigateAfterAuth();
     } on FirebaseAuthException catch (e) {
-      setState(() => _errorMessage = e.message ?? 'Error desconocido');
+      setState(() => _errorMessage = _mapError(e.code));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _register() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_passwordController.text != _confirmPasswordController.text) {
+      setState(() => _errorMessage = 'Passwords do not match.');
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final cred =
+          await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+      await AnalyticsService.logSignUp();
+      if (cred.user != null) {
+        await AnalyticsService.setUserId(cred.user!.uid);
+      }
+      if (!mounted) return;
+      _navigateAfterAuth();
+    } on FirebaseAuthException catch (e) {
+      setState(() => _errorMessage = _mapError(e.code));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _navigateAfterAuth() {
+    if (widget.nextRoute != null) {
+      if (widget.nextRoute == '/checkout' && widget.product != null) {
+        Navigator.pushReplacementNamed(context, '/checkout',
+            arguments: widget.product);
+      } else {
+        Navigator.pushReplacementNamed(context, widget.nextRoute!);
+      }
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  String _mapError(String code) {
+    switch (code) {
+      case 'user-not-found':
+        return 'No account found with this email.';
+      case 'wrong-password':
+        return 'Incorrect password.';
+      case 'email-already-in-use':
+        return 'This email is already registered.';
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
+      case 'weak-password':
+        return 'Password must be at least 6 characters.';
+      default:
+        return 'Something went wrong. Please try again.';
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_isLogin ? 'Iniciar sesión' : 'Registrarse')),
-      body: Column(
-        children: [
-          // Banner de consent denegado
-          Container(
-            width: double.infinity,
-            color: Colors.red,
-            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-            child: const Text(
-              '⚠️ CONSENT DENEGADO',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 2,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  TextField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(labelText: 'Email'),
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _passwordController,
-                    decoration: const InputDecoration(labelText: 'Contraseña'),
-                    obscureText: true,
-                  ),
-                  const SizedBox(height: 24),
-                  if (_errorMessage.isNotEmpty)
-                    Text(
-                      _errorMessage,
-                      style: const TextStyle(color: Colors.red),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 16),
+
+                // ── Logo ─────────────────────────────────
+                Center(
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: HolaflyTheme.primary,
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                  const SizedBox(height: 8),
-                  ElevatedButton(
-                    onPressed: _submit,
-                    child: Text(_isLogin ? 'Entrar' : 'Crear cuenta'),
+                    child: const Center(
+                      child: Text('H',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 28)),
+                    ),
                   ),
-                  TextButton(
-                    onPressed: () => setState(() => _isLogin = !_isLogin),
-                    child: Text(
-                      _isLogin
-                          ? '¿No tienes cuenta? Regístrate'
-                          : '¿Ya tienes cuenta? Inicia sesión',
+                ),
+                const SizedBox(height: 24),
+
+                // ── Tab bar ──────────────────────────────
+                Container(
+                  decoration: BoxDecoration(
+                    color: HolaflyTheme.background,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: TabBar(
+                    controller: _tabController,
+                    indicator: BoxDecoration(
+                      color: HolaflyTheme.primary,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: HolaflyTheme.textSecondary,
+                    labelStyle: const TextStyle(
+                        fontFamily: 'Poppins', fontWeight: FontWeight.w600),
+                    tabs: const [
+                      Tab(text: 'Login'),
+                      Tab(text: 'Register'),
+                    ],
+                    onTap: (_) => setState(() => _errorMessage = null),
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                // ── Email field (shared) ──────────────────
+                TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Email address',
+                    prefixIcon: Icon(Icons.mail_outline_rounded),
+                  ),
+                  validator: (v) => (v == null || !v.contains('@'))
+                      ? 'Enter a valid email'
+                      : null,
+                ),
+                const SizedBox(height: 14),
+
+                // ── Password field (shared) ───────────────
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: _obscurePassword,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    prefixIcon: const Icon(Icons.lock_outline_rounded),
+                    suffixIcon: IconButton(
+                      icon: Icon(_obscurePassword
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined),
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
+                    ),
+                  ),
+                  validator: (v) => (v == null || v.length < 6)
+                      ? 'Minimum 6 characters'
+                      : null,
+                ),
+
+                // ── Confirm password (register only) ──────
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  child: _tabController.index == 1
+                      ? Column(
+                          children: [
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: _confirmPasswordController,
+                              obscureText: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Confirm password',
+                                prefixIcon: Icon(Icons.lock_outline_rounded),
+                              ),
+                            ),
+                          ],
+                        )
+                      : const SizedBox.shrink(),
+                ),
+
+                // ── Error message ─────────────────────────
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: HolaflyTheme.error.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: HolaflyTheme.error.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline,
+                            color: HolaflyTheme.error, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(_errorMessage!,
+                              style: const TextStyle(
+                                  color: HolaflyTheme.error, fontSize: 13)),
+                        ),
+                      ],
                     ),
                   ),
                 ],
-              ),
+
+                const SizedBox(height: 28),
+
+                // ── CTA button ────────────────────────────
+                ListenableBuilder(
+                  listenable: _tabController,
+                  builder: (context, _) {
+                    final isLogin = _tabController.index == 0;
+                    return ElevatedButton(
+                      onPressed: _isLoading
+                          ? null
+                          : (isLogin ? _login : _register),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2))
+                          : Text(isLogin ? 'Login' : 'Create account'),
+                    );
+                  },
+                ),
+
+                if (_tabController.index == 0) ...[
+                  const SizedBox(height: 16),
+                  Center(
+                    child: TextButton(
+                      onPressed: () {},
+                      child: const Text('Forgot password?',
+                          style: TextStyle(color: HolaflyTheme.textSecondary)),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
