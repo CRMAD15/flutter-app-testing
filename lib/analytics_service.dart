@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 
 /// Centralized wrapper for all Firebase Analytics events.
@@ -9,8 +11,15 @@ class AnalyticsService {
       FirebaseAnalyticsObserver(analytics: _analytics);
 
   // ─── User ────────────────────────────────────────────────
+
+  static String _sha256(String input) {
+    final bytes = utf8.encode(input);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
+  }
+
   static Future<void> setUserId(String userId) async {
-    await _analytics.setUserId(id: userId);
+    await _analytics.setUserId(id: _sha256(userId));
   }
 
   static Future<void> logLogin({String method = 'email'}) async {
@@ -39,7 +48,7 @@ class AnalyticsService {
   }) async {
     await _analytics.logViewItem(
       currency: 'EUR',
-      value: item.price,
+      value: item.price?.toDouble(),
       items: [item],
     );
   }
@@ -49,7 +58,7 @@ class AnalyticsService {
   }) async {
     await _analytics.logAddToCart(
       currency: 'EUR',
-      value: item.price,
+      value: item.price?.toDouble(),
       items: [item],
     );
   }

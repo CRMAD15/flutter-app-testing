@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
 import 'analytics_service.dart';
 import 'product_model.dart';
 import 'theme.dart';
 
 class LoginScreen extends StatefulWidget {
   final String? nextRoute;
-  final Product? product; // passed when coming from PDP
+  final Product? product;
 
   const LoginScreen({super.key, this.nextRoute, this.product});
 
@@ -40,6 +42,12 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
+  // ─── SHA-256 helper ──────────────────────────────────
+  String _sha256(String input) {
+    final bytes = utf8.encode(input);
+    return sha256.convert(bytes).toString();
+  }
+
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
@@ -53,7 +61,7 @@ class _LoginScreenState extends State<LoginScreen>
       );
       await AnalyticsService.logLogin();
       if (cred.user != null) {
-        await AnalyticsService.setUserId(cred.user!.uid);
+        await AnalyticsService.setUserId(_sha256(cred.user!.uid));
       }
       if (!mounted) return;
       _navigateAfterAuth();
@@ -75,14 +83,13 @@ class _LoginScreenState extends State<LoginScreen>
       _errorMessage = null;
     });
     try {
-      final cred =
-          await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
       await AnalyticsService.logSignUp();
       if (cred.user != null) {
-        await AnalyticsService.setUserId(cred.user!.uid);
+        await AnalyticsService.setUserId(_sha256(cred.user!.uid));
       }
       if (!mounted) return;
       _navigateAfterAuth();
@@ -182,7 +189,7 @@ class _LoginScreenState extends State<LoginScreen>
                 ),
                 const SizedBox(height: 28),
 
-                // ── Email field (shared) ──────────────────
+                // ── Email field ──────────────────────────
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -196,7 +203,7 @@ class _LoginScreenState extends State<LoginScreen>
                 ),
                 const SizedBox(height: 14),
 
-                // ── Password field (shared) ───────────────
+                // ── Password field ───────────────────────
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
@@ -216,7 +223,7 @@ class _LoginScreenState extends State<LoginScreen>
                       : null,
                 ),
 
-                // ── Confirm password (register only) ──────
+                // ── Confirm password (register only) ─────
                 AnimatedSize(
                   duration: const Duration(milliseconds: 200),
                   child: _tabController.index == 1
